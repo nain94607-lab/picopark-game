@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { StyleSheet, View, TouchableOpacity, Text, SafeAreaView, StatusBar } from 'react-native';
 import { io } from 'socket.io-client';
 
-// Cambia esta IP por la de tu servidor local
 const socket = io('http://10.56.2.33:3000');
 
 export default function GamepadScreen() {
@@ -17,23 +16,19 @@ export default function GamepadScreen() {
     socket.emit('cambiar_nivel', num);
   };
 
-  const controlarMenu = (accion: string) => {
-    if (accion === 'MENU') socket.emit('abrir_menu');
-    if (accion === 'JUGAR') socket.emit('ir_a_niveles');
+  const controlarMenu = () => {
+    // Envía la orden para abrir el menú principal o salir de la pantalla de victoria
+    socket.emit('abrir_menu');
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar hidden />
 
-      {/* BARRA SUPERIOR PARA CONTROLAR LOS MENÚS Y NIVELES DESDE EL CELU */}
+      {/* BARRA SUPERIOR EN EL CELULAR: MENÚ Y NIVELES */}
       <View style={styles.topMenu}>
-        <TouchableOpacity style={styles.btnNav} onPress={() => controlarMenu('MENU')}>
-          <Text style={styles.btnNavText}>MENÚ</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.btnNav} onPress={() => controlarMenu('JUGAR')}>
-          <Text style={styles.btnNavText}>JUGAR</Text>
+        <TouchableOpacity style={styles.btnNav} onPress={controlarMenu}>
+          <Text style={styles.btnNavText}>⏸ MENÚ</Text>
         </TouchableOpacity>
 
         <View style={styles.separator} />
@@ -49,9 +44,8 @@ export default function GamepadScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* CONTROLES GIGANTES DE MOVIMIENTO Y SALTO */}
+      {/* CONTROLES DE MOVIMIENTO Y SALTO */}
       <View style={styles.controlsArea}>
-        {/* Izquierda: Movimiento (Izquierda / Derecha) */}
         <View style={styles.leftZone}>
           <TouchableOpacity 
             activeOpacity={0.8}
@@ -72,7 +66,6 @@ export default function GamepadScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Derecha: Botón de Salto */}
         <View style={styles.rightZone}>
           <TouchableOpacity 
             activeOpacity={0.8}
@@ -100,14 +93,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 8,
     borderBottomWidth: 2,
     borderColor: '#334155',
-    paddingHorizontal: 5,
+    paddingHorizontal: 10,
   },
   btnNav: {
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 12,
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 6,
   },
@@ -120,11 +113,11 @@ const styles = StyleSheet.create({
     width: 2,
     height: 30,
     backgroundColor: '#475569',
-    marginHorizontal: 4,
+    marginHorizontal: 6,
   },
   btnLevel: {
     backgroundColor: '#1e293b',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 6,
     borderWidth: 1,
