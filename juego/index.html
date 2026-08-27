@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pico Park - Juego</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: #0f172a;
+      color: #ffffff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Interfaz Superior (HUD) */
+    #hud {
+      width: 100%;
+      max-width: 960px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      background-color: #1e293b;
+      border-radius: 12px 12px 0 0;
+      border: 2px solid #334155;
+      border-bottom: none;
+    }
+
+    .hud-item {
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: 1px;
+      color: #38bdf8;
+    }
+
+    /* Contenedor del Juego */
+    #game-container {
+      position: relative;
+      width: 960px;
+      height: 540px;
+      background-color: #1e1e2e;
+      border: 2px solid #334155;
+      border-radius: 0 0 12px 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    canvas {
+      display: block;
+      background-color: #181825;
+    }
+
+    /* Pantallas de Menú y Niveles */
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(15, 23, 42, 0.92);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 20px;
+      z-index: 10;
+    }
+
+    .title {
+      font-size: 38px;
+      font-weight: 900;
+      color: #f43f5e;
+      text-shadow: 2px 2px 0px #881337;
+      letter-spacing: 2px;
+    }
+
+    .btn {
+      background-color: #2563eb;
+      color: #ffffff;
+      border: none;
+      padding: 14px 28px;
+      font-size: 18px;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.1s, background-color 0.2s;
+      box-shadow: 0 4px 0 #1d4ed8;
+    }
+
+    .btn:hover {
+      background-color: #3b82f6;
+    }
+
+    .btn:active {
+      transform: translateY(4px);
+      box-shadow: 0 0 0 #1d4ed8;
+    }
+
+    /* Selector de Niveles */
+    .levels-grid {
+      display: flex;
+      gap: 15px;
+    }
+
+    .btn-level {
+      width: 65px;
+      height: 65px;
+      font-size: 22px;
+      border-radius: 12px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+  <script src="http://localhost:3000/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+  <!-- Barra de información durante la partida -->
+  <div id="hud">
+    <div class="hud-item" id="hud-level">NIVEL: 1</div>
+    <div class="hud-item" id="hud-status">ESPERANDO JUGADOR...</div>
+    <button class="btn" style="padding: 6px 12px; font-size: 12px;" onclick="mostrarMenu()">MENÚ</button>
+  </div>
+
+  <div id="game-container">
+    <!-- Lienzo del Juego -->
+    <canvas id="gameCanvas" width="960" height="540"></canvas>
+
+    <!-- Menú Principal -->
+    <div id="main-menu" class="overlay">
+      <h1 class="title">PICO PARK</h1>
+      <button class="btn" onclick="abrirNiveles()">JUGAR</button>
+    </div>
+
+    <!-- Menú de Selección de Niveles -->
+    <div id="level-menu" class="overlay hidden">
+      <h2 style="color: #38bdf8; font-size: 24px;">SELECCIONA EL NIVEL</h2>
+      <div class="levels-grid">
+        <button class="btn btn-level" onclick="iniciarNivel(1)">1</button>
+        <button class="btn btn-level" onclick="iniciarNivel(2)">2</button>
+        <button class="btn btn-level" onclick="iniciarNivel(3)">3</button>
+      </div>
+      <button class="btn" style="background-color: #475569; box-shadow: 0 4px 0 #334155;" onclick="abrirMenuPrincipal()">VOLVER</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Conexión Socket.io con el Servidor
+    const socket = io('http://localhost:3000');
+
+    // Configuración del Mundo del Juego (Nivel grande)
+    const WORLD = {
+      width: 2400,  // Nivel amplio a lo ancho
+      height: 1200, // Nivel alto verticalmente
+      gravity: 0.6
+    };
+
+    // Cámara que sigue al jugador
+    const camera = {
+      x: 0,
+      y: 0,
+      width: canvas.width,
+      height: canvas.height
+    };
+
+    // Estado del Jugador
+    const player = {
+      x: 100,
+      y: 1000,
+      width: 40,
+      height: 40,
+      vx: 0,
+      vy: 0,
+      speed: 5,
+      jumpPower: -13,
+      grounded: false,
+      color: '#f43f5e'
+    };
+
+    // Entradas del mando móvil
+    const keys = { left: false, right: false, jump: false };
+
+    // Escuchar comandos enviadas por Socket.io desde el celular
+    socket.on('accion', (data) => {
+      const isPress = data.estado === 'PRESS';
+      if (data.tipo === 'IZQUIERDA') keys.left = isPress;
+      if (data.tipo === 'DERECHA') keys.right = isPress;
+      if (data.tipo === 'SALTAR') {
+        if (isPress && player.grounded) {
+          player.vy = player.jumpPower;
+          player.grounded = false;
+        }
+      }
+    });
+
+    // Control por Teclado PC (Respaldo para pruebas)
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+      if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+      if ((e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') && player.grounded) {
+        player.vy = player.jumpPower;
+        player.grounded = false;
+      }
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+      if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+    });
+
+    // Plataformas del Nivel
+    const platforms = [
+      { x: 0, y: 1150, width: 2400, height: 50 }, // Suelo principal
+      { x: 300, y: 1000, width: 200, height: 20 },
+      { x: 600, y: 880, width: 250, height: 20 },
+      { x: 950, y: 760, width: 200, height: 20 },
+      { x: 1300, y: 640, width: 300, height: 20 },
+      { x: 1700, y: 520, width: 200, height: 20 },
+      { x: 2000, y: 400, width: 300, height: 20 }, // Meta
+    ];
+
+    // Bucle Principal del Juego
+    function gameLoop() {
+      update();
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function update() {
+      // Movimiento horizontal
+      player.vx = 0;
+      if (keys.left) player.vx = -player.speed;
+      if (keys.right) player.vx = player.speed;
+
+      player.x += player.vx;
+
+      // Aplicar Gravedad
+      player.vy += WORLD.gravity;
+      player.y += player.vy;
+
+      // Colisión con Plataformas
+      player.grounded = false;
+      for (let plat of platforms) {
+        if (
+          player.x < plat.x + plat.width &&
+          player.x + player.width > plat.x &&
+          player.y + player.height >= plat.y &&
+          player.y + player.height <= plat.y + 15 &&
+          player.vy >= 0
+        ) {
+          player.y = plat.y - player.height;
+          player.vy = 0;
+          player.grounded = true;
+        }
+      }
+
+      // Límites del mundo
+      if (player.x < 0) player.x = 0;
+      if (player.x + player.width > WORLD.width) player.x = WORLD.width - player.width;
+
+      // SEGUIMIENTO DE LA CÁMARA (Centrada en el jugador)
+      camera.x = player.x - camera.width / 2 + player.width / 2;
+      camera.y = player.y - camera.height / 2 + player.height / 2;
+
+      // Limitar la cámara a los bordes del mundo
+      camera.x = Math.max(0, Math.min(camera.x, WORLD.width - camera.width));
+      camera.y = Math.max(0, Math.min(camera.y, WORLD.height - camera.height));
+    }
+
+    function render() {
+      // Limpiar Pantalla
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      // Trasladar la vista según la posición de la Cámara
+      ctx.translate(-camera.x, -camera.y);
+
+      // Dibujar Fondo decorativo (Grilla)
+      ctx.strokeStyle = '#27273a';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < WORLD.width; x += 60) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, WORLD.height); ctx.stroke();
+      }
+      for (let y = 0; y < WORLD.height; y += 60) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD.width, y); ctx.stroke();
+      }
+
+      // Dibujar Plataformas
+      ctx.fillStyle = '#38bdf8';
+      for (let plat of platforms) {
+        ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
+      }
+
+      // Dibujar Jugador
+      ctx.fillStyle = player.color;
+      ctx.fillRect(player.x, player.y, player.width, player.height);
+
+      ctx.restore();
+    }
+
+    // Navegación de Menús
+    function abrirNiveles() {
+      document.getElementById('main-menu').classList.add('hidden');
+      document.getElementById('level-menu').classList.remove('hidden');
+    }
+
+    function abrirMenuPrincipal() {
+      document.getElementById('level-menu').classList.add('hidden');
+      document.getElementById('main-menu').classList.remove('hidden');
+    }
+
+    function mostrarMenu() {
+      document.getElementById('main-menu').classList.remove('hidden');
+    }
+
+    function iniciarNivel(num) {
+      document.getElementById('level-menu').classList.add('hidden');
+      document.getElementById('hud-level').innerText = `NIVEL: ${num}`;
+      document.getElementById('hud-status').innerText = '¡JUGANDO!';
+      
+      // Reiniciar posición del jugador al piso inferior
+      player.x = 100;
+      player.y = 1000;
+      player.vx = 0;
+      player.vy = 0;
+    }
+    
+    socket.on('cambiar_nivel', (num) => {
+      iniciarNivel(num);
+    });
+
+    socket.on('abrir_menu', () => {
+      mostrarMenu();
+    });
+
+    socket.on('ir_a_niveles', () => {
+      abrirNiveles();
+    });
+
+    // Iniciar Bucle del Juego
+    gameLoop();
+  </script>
+</body>
+</html>
