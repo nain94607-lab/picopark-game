@@ -1,65 +1,64 @@
 const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const http = require('http').createServer(app);
+const io = require('socket.io')(http);
+const path = require('path');
 
-app.use(express.static('public'));
+// Servir la carpeta 'juego' para que la PC muestre el index.html al entrar a localhost:3000
+app.use(express.static(path.join(__dirname, 'juego')));
 
-// 4 Colores predefinidos para los 4 jugadores
-const PLAYER_COLORS = ['#FF4D4D', '#4D79FF', '#4DFF70', '#FFD700'];
-const players = {};
-let currentLevel = 1;
+let players = {};
+let colors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b']; // Colores para los jugadores
 
 io.on('connection', (socket) => {
-  console.log('🎮 Jugador intentando conectar:', socket.id);
+  console.log('¡Dispositivo conectado con ID:', socket.id);
 
-  // Limite de 4 jugadores
-  if (Object.keys(players).length >= 4) {
-    socket.emit('error_message', 'Servidor lleno (Máximo 4 jugadores)');
-    socket.disconnect();
-    return;
+  // Asignar rol de jugador si hay espacio (máximo 4)
+  const playerKeys = Object.keys(players);
+  if (playerKeys.length < 4) {
+    const playerIndex = playerKeys.length + 1;
+    players[socket.id] = {
+      playerIndex: playerIndex,
+      color: colors[playerKeys.length]
+    };
+    
+    // Enviar info de su color y número al celular
+    socket.emit('init_player', { player: players[socket.id] });
+    
+    // Actualizar la lista en la pantalla de la PC (Host)
+    io.emit('players_updated', players);
   }
 
-  // Buscar el primer color disponible
-  const assignedColors = Object.values(players).map(p => p.color);
-  const color = PLAYER_COLORS.find(c => !assignedColors.includes(c)) || PLAYER_COLORS[0];
-
-  players[socket.id] = {
-    id: socket.id,
-    color: color,
-    playerIndex: Object.keys(players).length + 1
-  };
-
-  console.log(`✅ Jugador ${players[socket.id].playerIndex} asignado con color: ${color}`);
-
-  // Notificar al nuevo jugador su asignación y el nivel actual
-  socket.emit('init_player', { player: players[socket.id], currentLevel });
-  
-  // Avisar al Host que se unió un nuevo jugador
-  io.emit('players_updated', players);
-
-  // Recibir entradas de control (Izquierda, Derecha, Salto)
-  socket.on('player_input', (inputData) => {
-    // Reemitir el input al Host de pantalla para que procese la física
-    io.emit('host_process_input', { socketId: socket.id, ...inputData });
+  // Recibir movimiento del celular y mandarlo a la pantalla de la PC
+  socket.on('player_input', (data) => {
+    io.emit('host_process_input', {
+      socketId: socket.id,
+      action: data.action,
+      eventType: data.eventType
+    });
   });
 
-  // Cambiar de nivel cuando se completa la meta
+  // Cambiar de nivel desde el celular
+  socket.on('cambiar_nivel', (levelNum) => {
+    io.emit('change_level', levelNum);
+  });
+
+  // Si se completó el nivel en la PC
   socket.on('level_completed', (nextLevel) => {
-    currentLevel = nextLevel;
-    io.emit('change_level', currentLevel);
+    io.emit('change_level', nextLevel);
   });
 
+  // Al desconectarse el celular o la PC
   socket.on('disconnect', () => {
-    console.log('❌ Jugador desconectado:', socket.id);
-    delete players[socket.id];
-    io.emit('players_updated', players);
+    console.log('Dispositivo desconectado:', socket.id);
+    if (players[socket.id]) {
+      delete players[socket.id];
+      io.emit('players_updated', players);
+    }
   });
 });
 
-server.listen(3000, '0.0.0.0', () => {
-  console.log('🚀 Servidor Pico Park escuchando en red local en puerto 3000');
+const PORT = 3000;
+http.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor corriendo con éxito en http://localhost:${PORT}`);
 });
