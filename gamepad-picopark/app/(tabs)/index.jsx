@@ -1,36 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, SafeAreaView, StatusBar } from 'react-native';
 import { io } from 'socket.io-client';
-import { activateKeepAwakeAsync, deactivateKeepAwakeAsync } from 'expo-keep-awake';
-import { CameraView } from 'expo-camera';
+import { useKeepAwake } from 'expo-keep-awake';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 export default function App() {
+  useKeepAwake();
+
   const [ipAddress, setIpAddress] = useState('');
   const [connected, setConnected] = useState(false);
   const [socket, setSocket] = useState(null);
   const [playerInfo, setPlayerInfo] = useState(null);
   const [scanning, setScanning] = useState(false);
-  const [hasPermission, setHasPermission] = useState(null);
+  const [permission, requestPermission] = useCameraPermissions();
   const [btnActivo, setBtnActivo] = useState(null);
 
-  // Mantener la pantalla encendida
-  useEffect(() => {
-    activateKeepAwakeAsync();
-    return () => { deactivateKeepAwakeAsync(); };
-  }, []);
-
-  // Solicitar permisos de cámara
   const requestCameraPermission = async () => {
-    const { status } = await CameraView.requestCameraPermissionsAsync();
-    setHasPermission(status === 'granted');
-    if (status === 'granted') {
-      setScanning(true);
+    if (!permission || !permission.granted) {
+      const result = await requestPermission();
+      if (result.granted) {
+        setScanning(true);
+      } else {
+        alert('Se requieren permisos de cámara para escanear el QR');
+      }
     } else {
-      alert('Se requieren permisos de cámara para escanear el QR');
+      setScanning(true);
     }
   };
 
-  // Conectar al Servidor WebSocket
   const connectToServer = (targetIp) => {
     if (!targetIp) return alert('Ingresa una dirección IP válida');
     
@@ -59,44 +56,31 @@ export default function App() {
       setPlayerInfo(null);
       setSocket(null);
     });
-
-    newSocket.on('error_message', (msg) => {
-      alert(msg);
-      newSocket.disconnect();
-    });
   };
 
-  // Transmisión de Eventos keydown / keyup para movimiento
+  // Función para desconectarse y volver al menú de IP
+  const disconnectFromServer = () => {
+    if (socket) {
+      socket.disconnect();
+    }
+    setConnected(false);
+    setPlayerInfo(null);
+    setSocket(null);
+  };
+
   const sendInput = (action, type) => {
     setBtnActivo(type === 'keydown' ? action : null);
     if (socket && connected) {
-      // Envía compatible con tu servidor viejo y nuevo
       socket.emit('player_input', { action, eventType: type });
-      socket.emit('accion', { tipo: action.toUpperCase(), estado: type === 'keydown' ? 'PRESS' : 'RELEASE' });
     }
   };
 
-  // Cambiar de Nivel o Menú desde el celular
-  const seleccionarNivel = (num) => {
-    if (socket && connected) {
-      socket.emit('cambiar_nivel', num);
-    }
-  };
-
-  const controlarMenu = () => {
-    if (socket && connected) {
-      socket.emit('abrir_menu');
-    }
-  };
-
-  // Lectura de QR
   const handleBarCodeScanned = ({ data }) => {
     setScanning(false);
     setIpAddress(data);
     connectToServer(data);
   };
 
-  // MODO ESCÁNER DE CÓDIGO QR
   if (scanning) {
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -112,7 +96,6 @@ export default function App() {
     );
   }
 
-  // PANTALLA DE EMPAREJAMIENTO (DESCONECTADO)
   if (!connected) {
     return (
       <SafeAreaView style={styles.container}>
@@ -141,65 +124,70 @@ export default function App() {
     );
   }
 
-  // PANTALLA DEL GAMEPAD (CONECTADO)
   return (
     <SafeAreaView style={[styles.gamepadContainer, { backgroundColor: playerInfo?.color || '#18181c' }]}>
       <StatusBar hidden />
-
-      {/* BARRA SUPERIOR: MENÚ Y NIVELES */}
-      <View style={styles.topMenu}>
-        <TouchableOpacity style={styles.btnNav} onPress={controlarMenu}>
-          <Text style={styles.btnNavText}>⏸ MENÚ</Text>
+      
+      {/* Barra superior: 1. Desconectar (Salir), 2. Pausa, 3. Niveles */}
+      <View style={styles.topUtilityBar}>
+        <TouchableOpacity 
+          style={styles.topDisconnectBtn} 
+          onPress={disconnectFromServer}
+        >
+          <Text style={styles.utilityText}>🔌 SALIR</Text>
         </TouchableOpacity>
 
-        <View style={styles.separator} />
-
-        <TouchableOpacity style={styles.btnLevel} onPress={() => seleccionarNivel(1)}>
-          <Text style={styles.btnLevelText}>N1</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnLevel} onPress={() => seleccionarNivel(2)}>
-          <Text style={styles.btnLevelText}>N2</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnLevel} onPress={() => seleccionarNivel(3)}>
-          <Text style={styles.btnLevelText}>N3</Text>
+        <TouchableOpacity 
+          style={styles.topPauseBtn} 
+          onPress={() => sendInput('pause', 'click')}
+        >
+          <Text style={styles.utilityText}>⏸ PAUSA</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.disconnectBtn} onPress={() => socket?.disconnect()}>
-          <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 11 }}>Salir</Text>
+        <TouchableOpacity style={styles.topLevelBtn} onPress={() => socket?.emit('cambiar_nivel', 1)}>
+          <Text style={styles.utilityText}>N1</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.topLevelBtn} onPress={() => socket?.emit('cambiar_nivel', 2)}>
+          <Text style={styles.utilityText}>N2</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.topLevelBtn} onPress={() => socket?.emit('cambiar_nivel', 3)}>
+          <Text style={styles.utilityText}>N3</Text>
         </TouchableOpacity>
       </View>
 
-      {/* ZONA DE CONTROLES */}
-      <View style={styles.controlsArea}>
-        <View style={styles.dpad}>
+      {/* DISEÑO TIPO MANDO DE PLAY: Movimiento a la izquierda y Saltar a la derecha */}
+      <View style={styles.controllerLayout}>
+        
+        {/* ZONA IZQUIERDA: Izquierda y Derecha lado a lado */}
+        <View style={styles.dpadSection}>
           <TouchableOpacity
-            style={[styles.dpadBtn, btnActivo === 'left' && styles.btnActive]}
+            style={[styles.padBtn, btnActivo === 'left' && styles.boxActive]}
             onPressIn={() => sendInput('left', 'keydown')}
             onPressOut={() => sendInput('left', 'keyup')}
           >
-            <Text style={styles.arrowText}>◄</Text>
+            <Text style={styles.boxText}>◄ IZQ</Text>
           </TouchableOpacity>
 
-          <View style={styles.dpadSpacer} />
-
           <TouchableOpacity
-            style={[styles.dpadBtn, btnActivo === 'right' && styles.btnActive]}
+            style={[styles.padBtn, btnActivo === 'right' && styles.boxActive]}
             onPressIn={() => sendInput('right', 'keydown')}
             onPressOut={() => sendInput('right', 'keyup')}
           >
-            <Text style={styles.arrowText}>►</Text>
+            <Text style={styles.boxText}>DER ►</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.actionGroup}>
+        {/* ZONA DERECHA: Botón de Saltar */}
+        <View style={styles.actionSection}>
           <TouchableOpacity
-            style={[styles.actionBtn, btnActivo === 'jump' && styles.btnJumpActive]}
+            style={[styles.jumpPadBtn, btnActivo === 'jump' && styles.jumpBoxActive]}
             onPressIn={() => sendInput('jump', 'keydown')}
             onPressOut={() => sendInput('jump', 'keyup')}
           >
-            <Text style={styles.actionBtnText}>SALTAR</Text>
+            <Text style={styles.jumpText}>▲ SALTAR</Text>
           </TouchableOpacity>
         </View>
+
       </View>
     </SafeAreaView>
   );
@@ -207,7 +195,7 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#121214', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  gamepadContainer: { flex: 1, justifyContent: 'space-between' },
+  gamepadContainer: { flex: 1, padding: 10, justifyContent: 'space-between' },
   title: { fontSize: 26, fontWeight: 'bold', color: '#FFF', marginBottom: 30 },
   ipBox: { width: '100%', maxWidth: 320, backgroundColor: '#1e1e24', padding: 20, borderRadius: 10 },
   label: { color: '#CCC', marginBottom: 8, fontSize: 14 },
@@ -216,54 +204,24 @@ const styles = StyleSheet.create({
   qrBtn: { backgroundColor: '#28a745' },
   btnText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
   closeBtn: { position: 'absolute', bottom: 40, alignSelf: 'center', backgroundColor: '#dc3545', padding: 15, borderRadius: 8 },
-  topMenu: {
-    height: 50,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  btnNav: {
-    backgroundColor: '#dc2626',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  btnNavText: {
-    color: '#ffffff',
-    fontWeight: '900',
-    fontSize: 11,
-  },
-  separator: {
-    width: 1,
-    height: 25,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
-  btnLevel: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  btnLevelText: {
-    color: '#ffffff',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  disconnectBtn: { backgroundColor: '#dc2626', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 4 },
-  controlsArea: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20 },
-  dpad: { flexDirection: 'row', alignItems: 'center' },
-  dpadBtn: { width: 85, height: 85, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', borderRadius: 42, borderWidth: 2, borderColor: '#FFF' },
-  dpadSpacer: { width: 15 },
-  arrowText: { color: '#FFF', fontSize: 32, fontWeight: 'bold' },
-  actionGroup: { alignItems: 'center' },
-  actionBtn: { width: 130, height: 130, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', borderRadius: 65, borderWidth: 3, borderColor: '#FFF' },
-  actionBtnText: { color: '#FFF', fontSize: 20, fontWeight: '900', letterSpacing: 1 },
-  btnActive: { backgroundColor: '#2563eb' },
-  btnJumpActive: { backgroundColor: '#991b1b' }
+
+  // Barra superior de utilidad
+  topUtilityBar: { flexDirection: 'row', height: 42, gap: 6, marginBottom: 8 },
+  topDisconnectBtn: { flex: 1.5, backgroundColor: '#4b5563', justifyContent: 'center', alignItems: 'center', borderRadius: 6, borderWidth: 1, borderColor: '#FFF' },
+  topPauseBtn: { flex: 1.5, backgroundColor: '#dc2626', justifyContent: 'center', alignItems: 'center', borderRadius: 6, borderWidth: 1, borderColor: '#FFF' },
+  topLevelBtn: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', borderRadius: 6, borderWidth: 1, borderColor: '#FFF' },
+  utilityText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
+
+  // Estilo de mando horizontal tipo consola
+  controllerLayout: { flex: 1, flexDirection: 'row', gap: 15, alignItems: 'stretch' },
+  dpadSection: { flex: 1.2, flexDirection: 'row', gap: 10 },
+  actionSection: { flex: 1 },
+
+  padBtn: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', borderRadius: 16, borderWidth: 2, borderColor: '#FFF' },
+  jumpPadBtn: { flex: 1, backgroundColor: 'rgba(153, 27, 27, 0.7)', justifyContent: 'center', alignItems: 'center', borderRadius: 16, borderWidth: 2, borderColor: '#FFF' },
+
+  boxText: { color: '#FFF', fontSize: 18, fontWeight: '900', letterSpacing: 1 },
+  jumpText: { color: '#FFF', fontSize: 22, fontWeight: '900', letterSpacing: 1 },
+  boxActive: { backgroundColor: '#2563eb' },
+  jumpBoxActive: { backgroundColor: '#b91c1c' }
 });
