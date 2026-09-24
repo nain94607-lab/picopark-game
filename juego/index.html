@@ -10,7 +10,6 @@
     .status-bar { display: flex; justify-content: space-around; width: 800px; margin: 0 auto; background: #2a2a32; padding: 10px; border-radius: 6px; align-items: center; }
     .badge { padding: 5px 10px; border-radius: 4px; font-weight: bold; }
     
-    /* ESTILOS PARA EL PANEL DE QR FLOTANTE */
     #qr-overlay {
       position: fixed;
       top: 20px;
@@ -37,7 +36,6 @@
       margin-top: 5px;
     }
 
-    /* ESTILO PARA EL AVISO DE PAUSA EN PANTALLA */
     #pauseOverlay {
       display: none;
       position: fixed;
@@ -59,17 +57,15 @@
 
   <!-- Motor Físico Matter.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
-  <!-- Librería QRCode.js para generar el código QR en pantalla -->
+  <!-- Librería QRCode.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
   <h1>🎮 Pico Park - Host (Pantalla Principal)</h1>
 
-  <!-- AVISO VISUAL DE PAUSA -->
   <div id="pauseOverlay">⏸ JUEGO PAUSADO</div>
 
-  <!-- PANEL VISUAL DE CONEXIÓN (IP Y QR EN PANTALLA) -->
   <div id="qr-overlay">
     <div style="font-size: 14px; font-weight: bold; color: #fff;">📱 ESCANEA PARA UNIRTE</div>
     <div id="qrcode"></div>
@@ -88,11 +84,14 @@
   <script>
     const socket = io();
 
-    // Mostrar automáticamente la IP y generar el QR con la dirección actual del host
-    const currentHostUrl = window.location.href; // Ej: http://192.168.1.15:3000/
-    document.getElementById('lblIpAddress').innerText = window.location.host;
+    socket.emit('register_host');
 
-    // Generar el código QR visualmente
+    const HOST_IP = "10.56.2.42";
+    const PORT = window.location.port || '3000';
+    const currentHostUrl = `http://${HOST_IP}:${PORT}/`;
+
+    document.getElementById('lblIpAddress').innerText = `${HOST_IP}:${PORT}`;
+
     new QRCode(document.getElementById("qrcode"), {
       text: currentHostUrl,
       width: 128,
@@ -102,10 +101,9 @@
       correctLevel : QRCode.CorrectLevel.H
     });
 
-    const { Engine, Render, Runner, Bodies, Body, Composite, Events, Vector } = Matter;
+    const { Engine, Render, Runner, Bodies, Body, Composite, Events } = Matter;
 
-    // Configuración del Motor Físico
-    const engine = Engine.create({ gravity: { x: 0, y: 1.5 } });
+    const engine = Engine.create({ gravity: { x: 0, y: 1.2 } });
     const container = document.getElementById('canvas-container');
 
     const render = Render.create({
@@ -122,8 +120,9 @@
     let playersBodies = {};
     let keyBody = null;
     let doorBody = null;
+    let hazardBody = null;
     let hasKey = false;
-    let isPaused = false; // Variable global para controlar el estado de pausa
+    let isPaused = false;
 
     function loadLevel(lvl) {
       level = lvl;
@@ -131,38 +130,91 @@
       hasKey = false;
       document.getElementById('lblKeyStatus').innerText = "En el Mapa";
 
+      // Resetear mundo físico
       Composite.clear(engine.world);
+      playersBodies = {};
 
-      const ground = Bodies.rectangle(400, 490, 800, 20, { isStatic: true, render: { fillStyle: '#4a4a5a' } });
-      const leftWall = Bodies.rectangle(10, 250, 20, 500, { isStatic: true, render: { fillStyle: '#4a4a5a' } });
-      const rightWall = Bodies.rectangle(790, 250, 20, 500, { isStatic: true, render: { fillStyle: '#4a4a5a' } });
-      Composite.add(engine.world, [ground, leftWall, rightWall]);
+      // Paredes laterales y techo
+      const leftWall  = Bodies.rectangle(10, 250, 20, 500, { isStatic: true, render: { fillStyle: '#334155' } });
+      const rightWall = Bodies.rectangle(790, 250, 20, 500, { isStatic: true, render: { fillStyle: '#334155' } });
+      const ceiling   = Bodies.rectangle(400, 10, 800, 20, { isStatic: true, render: { fillStyle: '#334155' } });
 
       if (level === 1) {
-        keyBody = Bodies.rectangle(400, 460, 20, 20, { isSensor: true, render: { fillStyle: '#ffea00' } });
-      } else if (level === 2) {
-        const platform = Bodies.rectangle(600, 220, 200, 20, { isStatic: true, render: { fillStyle: '#8b5cf6' } });
-        Composite.add(engine.world, platform);
-        keyBody = Bodies.rectangle(600, 190, 20, 20, { isSensor: true, render: { fillStyle: '#ffea00' } });
-      }
+        // --- SUELOS ---
+        // Plataforma Salida (Izquierda)
+        const startGround = Bodies.rectangle(120, 480, 220, 30, { isStatic: true, render: { fillStyle: '#475569' } });
+        
+        // Plataforma Llegada (Derecha)
+        const endGround = Bodies.rectangle(680, 480, 220, 30, { isStatic: true, render: { fillStyle: '#475569' } });
 
-      doorBody = Bodies.rectangle(740, 440, 40, 80, { isSensor: true, render: { fillStyle: '#3b82f6' } });
-      Composite.add(engine.world, [keyBody, doorBody]);
+        // Plataformas intermedias
+        const plat1 = Bodies.rectangle(280, 410, 110, 20, { isStatic: true, render: { fillStyle: '#64748b' } });
+        const plat2 = Bodies.rectangle(450, 320, 130, 20, { isStatic: true, render: { fillStyle: '#64748b' } });
+
+        // --- LAVA ---
+        hazardBody = Bodies.rectangle(400, 495, 340, 15, { 
+          isStatic: true, 
+          isSensor: true, 
+          render: { fillStyle: '#ef4444' } 
+        });
+
+        // --- LLAVE (Amarilla) --- (Ubicada flotando arriba de la plataforma 2)
+        keyBody = Bodies.rectangle(450, 270, 25, 25, { 
+          isStatic: true,
+          isSensor: true, 
+          render: { fillStyle: '#eab308' } 
+        });
+
+        // --- PUERTA (Azul) --- (Ubicada sobre la plataforma derecha)
+        doorBody = Bodies.rectangle(730, 425, 40, 80, { 
+          isStatic: true,
+          isSensor: true, 
+          render: { fillStyle: '#2563eb' } 
+        });
+
+        Composite.add(engine.world, [leftWall, rightWall, ceiling, startGround, endGround, plat1, plat2, hazardBody, keyBody, doorBody]);
+      }
 
       socket.emit('get_current_players');
     }
 
+    // Detección de Colisiones
     Events.on(engine, 'collisionStart', (event) => {
-      if (isPaused) return; // Si está pausado ignoramos colisiones
+      if (isPaused) return;
+
       event.pairs.forEach(pair => {
         const { bodyA, bodyB } = pair;
-        if ((bodyA === keyBody || bodyB === keyBody) && !hasKey) {
-          hasKey = true;
-          document.getElementById('lblKeyStatus').innerText = "🔑 ¡Llave Obtenida!";
-          Composite.remove(engine.world, keyBody);
+
+        // Tocar Lava -> Perder
+        if (bodyA === hazardBody || bodyB === hazardBody) {
+          document.getElementById('lblKeyStatus').innerText = "💀 ¡Caíste en la lava!";
+          setTimeout(() => {
+            loadLevel(level);
+          }, 200);
+          return;
         }
-        if ((bodyA === doorBody || bodyB === doorBody) && hasKey) {
-          checkWinCondition();
+
+        // Tocar Llave
+        const isKeyA = bodyA === keyBody;
+        const isKeyB = bodyB === keyBody;
+        if ((isKeyA || isKeyB) && !hasKey) {
+          // Verificar que el que tocó la llave NO sea una pared o plataforma
+          const otherBody = isKeyA ? bodyB : bodyA;
+          if (!otherBody.isStatic) {
+            hasKey = true;
+            document.getElementById('lblKeyStatus').innerText = "🔑 ¡Llave Obtenida!";
+            Composite.remove(engine.world, keyBody);
+          }
+        }
+
+        // Tocar Puerta con la llave
+        const isDoorA = bodyA === doorBody;
+        const isDoorB = bodyB === doorBody;
+        if ((isDoorA || isDoorB) && hasKey) {
+          const otherBody = isDoorA ? bodyB : bodyA;
+          if (!otherBody.isStatic) {
+            checkWinCondition();
+          }
         }
       });
     });
@@ -173,15 +225,14 @@
 
       playerKeys.forEach(id => {
         const p = playersBodies[id];
-        if (Math.abs(p.body.position.x - doorBody.position.x) < 50) {
+        if (Math.abs(p.body.position.x - doorBody.position.x) < 60) {
           countNearDoor++;
         }
       });
 
       if (countNearDoor >= playerKeys.length && playerKeys.length > 0) {
-        alert(`🎉 ¡Nivel ${level} Completado!`);
-        const nextLevel = level === 1 ? 2 : 1;
-        socket.emit('level_completed', nextLevel);
+        alert(`🎉 ¡NIVEL COMPLETADO!`);
+        loadLevel(1);
       }
     }
 
@@ -191,7 +242,7 @@
       for (let id in serverPlayers) {
         if (!playersBodies[id]) {
           const sp = serverPlayers[id];
-          const playerBody = Bodies.rectangle(100 + (sp.playerIndex * 40), 400, 30, 40, {
+          const playerBody = Bodies.rectangle(80 + (sp.playerIndex * 35), 400, 30, 40, {
             inertia: Infinity,
             friction: 0.1,
             render: { fillStyle: sp.color }
@@ -210,7 +261,6 @@
     });
 
     socket.on('host_process_input', (data) => {
-      // Controlar la acción de pausa enviada desde el celular
       if (data.action === 'pause') {
         isPaused = !isPaused;
         const pauseBox = document.getElementById('pauseOverlay');
@@ -220,7 +270,6 @@
         return;
       }
 
-      // Si el juego está pausado, no se procesa ningún movimiento de controles
       if (isPaused) return;
 
       const p = playersBodies[data.socketId];
@@ -228,8 +277,8 @@
 
       if (data.action === 'left') Body.setVelocity(p.body, { x: -4, y: p.body.velocity.y });
       if (data.action === 'right') Body.setVelocity(p.body, { x: 4, y: p.body.velocity.y });
-      if (data.action === 'jump' && Math.abs(p.body.velocity.y) < 0.2) {
-        Body.setVelocity(p.body, { x: p.body.velocity.x, y: -9 });
+      if (data.action === 'jump' && Math.abs(p.body.velocity.y) < 0.3) {
+        Body.setVelocity(p.body, { x: p.body.velocity.x, y: -11 });
       }
     });
 
