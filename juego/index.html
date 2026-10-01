@@ -8,7 +8,6 @@
     #canvas-container { display: flex; justify-content: center; margin-top: 10px; }
     canvas { border: 4px solid #fff; border-radius: 6px; background: #222; }
     .status-bar { display: flex; justify-content: space-around; width: 800px; margin: 0 auto; background: #2a2a32; padding: 10px; border-radius: 6px; align-items: center; }
-    .badge { padding: 5px 10px; border-radius: 4px; font-weight: bold; }
     
     #qr-overlay {
       position: fixed;
@@ -86,7 +85,7 @@
 
     socket.emit('register_host');
 
-    const HOST_IP = "10.56.2.42";
+    const HOST_IP = "10.56.2.33";
     const PORT = window.location.port || '3000';
     const currentHostUrl = `http://${HOST_IP}:${PORT}/`;
 
@@ -103,7 +102,7 @@
 
     const { Engine, Render, Runner, Bodies, Body, Composite, Events } = Matter;
 
-    const engine = Engine.create({ gravity: { x: 0, y: 1.2 } });
+    const engine = Engine.create({ gravity: { x: 0, y: 1.4 } });
     const container = document.getElementById('canvas-container');
 
     const render = Render.create({
@@ -113,7 +112,7 @@
     });
 
     Render.run(render);
-    const runner = Runner.create({ fps: 30 });
+    const runner = Runner.create({ fps: 60 });
     Runner.run(runner, engine);
 
     let level = 1;
@@ -121,6 +120,7 @@
     let keyBody = null;
     let doorBody = null;
     let hazardBody = null;
+    let potionBody = null;
     let hasKey = false;
     let isPaused = false;
 
@@ -130,53 +130,77 @@
       hasKey = false;
       document.getElementById('lblKeyStatus').innerText = "En el Mapa";
 
-      // Resetear mundo físico
-      Composite.clear(engine.world);
+      // Limpiar completamente el mundo de física
+      Composite.clear(engine.world, false);
       playersBodies = {};
+      potionBody = null;
 
-      // Paredes laterales y techo
       const leftWall  = Bodies.rectangle(10, 250, 20, 500, { isStatic: true, render: { fillStyle: '#334155' } });
       const rightWall = Bodies.rectangle(790, 250, 20, 500, { isStatic: true, render: { fillStyle: '#334155' } });
       const ceiling   = Bodies.rectangle(400, 10, 800, 20, { isStatic: true, render: { fillStyle: '#334155' } });
 
+      let levelBodies = [leftWall, rightWall, ceiling];
+
       if (level === 1) {
-        // --- SUELOS ---
-        // Plataforma Salida (Izquierda)
         const startGround = Bodies.rectangle(120, 480, 220, 30, { isStatic: true, render: { fillStyle: '#475569' } });
-        
-        // Plataforma Llegada (Derecha)
-        const endGround = Bodies.rectangle(680, 480, 220, 30, { isStatic: true, render: { fillStyle: '#475569' } });
+        const endGround   = Bodies.rectangle(680, 480, 220, 30, { isStatic: true, render: { fillStyle: '#475569' } });
+        const plat1       = Bodies.rectangle(280, 415, 110, 20, { isStatic: true, render: { fillStyle: '#64748b' } });
+        const plat2       = Bodies.rectangle(450, 345, 130, 20, { isStatic: true, render: { fillStyle: '#64748b' } });
 
-        // Plataformas intermedias
-        const plat1 = Bodies.rectangle(280, 410, 110, 20, { isStatic: true, render: { fillStyle: '#64748b' } });
-        const plat2 = Bodies.rectangle(450, 320, 130, 20, { isStatic: true, render: { fillStyle: '#64748b' } });
+        hazardBody = Bodies.rectangle(400, 495, 340, 15, { isStatic: true, isSensor: true, render: { fillStyle: '#ef4444' } });
+        keyBody    = Bodies.rectangle(450, 300, 25, 25, { isStatic: true, isSensor: true, render: { fillStyle: '#eab308' } });
+        doorBody   = Bodies.rectangle(730, 425, 40, 80, { isStatic: true, isSensor: true, render: { fillStyle: '#2563eb' } });
 
-        // --- LAVA ---
-        hazardBody = Bodies.rectangle(400, 495, 340, 15, { 
-          isStatic: true, 
-          isSensor: true, 
-          render: { fillStyle: '#ef4444' } 
-        });
+        levelBodies.push(startGround, endGround, plat1, plat2, hazardBody, keyBody, doorBody);
 
-        // --- LLAVE (Amarilla) --- (Ubicada flotando arriba de la plataforma 2)
-        keyBody = Bodies.rectangle(450, 270, 25, 25, { 
+      } else if (level === 2) {
+        const startGround = Bodies.rectangle(90, 480, 140, 30, { isStatic: true, render: { fillStyle: '#475569' } });
+        const plat1       = Bodies.rectangle(220, 410, 90, 20,  { isStatic: true, render: { fillStyle: '#64748b' } });
+        const plat2       = Bodies.rectangle(350, 320, 90, 20,  { isStatic: true, render: { fillStyle: '#64748b' } });
+        const plat3       = Bodies.rectangle(490, 240, 110, 20, { isStatic: true, render: { fillStyle: '#64748b' } });
+        const plat4       = Bodies.rectangle(630, 330, 90, 20,  { isStatic: true, render: { fillStyle: '#64748b' } });
+        const endGround   = Bodies.rectangle(730, 480, 120, 30, { isStatic: true, render: { fillStyle: '#475569' } });
+
+        hazardBody = Bodies.rectangle(410, 495, 500, 15, { isStatic: true, isSensor: true, render: { fillStyle: '#ef4444' } });
+        keyBody    = Bodies.rectangle(490, 195, 25, 25, { isStatic: true, isSensor: true, render: { fillStyle: '#eab308' } });
+        doorBody   = Bodies.rectangle(735, 425, 40, 80, { isStatic: true, isSensor: true, render: { fillStyle: '#2563eb' } });
+
+        // Poción de súper salto (Color Púrpura Neón / Magenta)
+        potionBody = Bodies.circle(180, 440, 12, {
           isStatic: true,
-          isSensor: true, 
-          render: { fillStyle: '#eab308' } 
+          isSensor: true,
+          render: { fillStyle: '#a855f7', strokeStyle: '#f43f5e', lineWidth: 3 }
         });
 
-        // --- PUERTA (Azul) --- (Ubicada sobre la plataforma derecha)
-        doorBody = Bodies.rectangle(730, 425, 40, 80, { 
-          isStatic: true,
-          isSensor: true, 
-          render: { fillStyle: '#2563eb' } 
-        });
-
-        Composite.add(engine.world, [leftWall, rightWall, ceiling, startGround, endGround, plat1, plat2, hazardBody, keyBody, doorBody]);
+        levelBodies.push(startGround, plat1, plat2, plat3, plat4, endGround, hazardBody, keyBody, doorBody, potionBody);
       }
 
+      Composite.add(engine.world, levelBodies);
       socket.emit('get_current_players');
     }
+
+    // Actualización del bucle de física
+    Events.on(engine, 'beforeUpdate', () => {
+      if (isPaused) return;
+
+      for (let id in playersBodies) {
+        const p = playersBodies[id];
+        if (!p || !p.body) continue;
+
+        let moveX = 0;
+        if (p.inputs.left) moveX -= 4.5;
+        if (p.inputs.right) moveX += 4.5;
+
+        Body.setVelocity(p.body, { x: moveX, y: p.body.velocity.y });
+
+        // Salto condicionado por el estado de superSalto
+        if (p.inputs.jump && Math.abs(p.body.velocity.y) < 0.2) {
+          const jumpPower = p.hasSuperJump ? -12.5 : -8.5;
+          Body.setVelocity(p.body, { x: p.body.velocity.x, y: jumpPower });
+          p.inputs.jump = false;
+        }
+      }
+    });
 
     // Detección de Colisiones
     Events.on(engine, 'collisionStart', (event) => {
@@ -185,20 +209,51 @@
       event.pairs.forEach(pair => {
         const { bodyA, bodyB } = pair;
 
-        // Tocar Lava -> Perder
+        // 1. Colisión con Peligro / Lava
         if (bodyA === hazardBody || bodyB === hazardBody) {
           document.getElementById('lblKeyStatus').innerText = "💀 ¡Caíste en la lava!";
           setTimeout(() => {
             loadLevel(level);
-          }, 200);
+          }, 150);
           return;
         }
 
-        // Tocar Llave
+        // 2. Colisión con la Poción de Súper Salto
+        const isPotionA = bodyA === potionBody;
+        const isPotionB = bodyB === potionBody;
+        if ((isPotionA || isPotionB) && potionBody) {
+          const otherBody = isPotionA ? bodyB : bodyA;
+          
+          // Buscar qué jugador agarró la poción
+          for (let id in playersBodies) {
+            if (playersBodies[id].body === otherBody) {
+              const p = playersBodies[id];
+              
+              // Aplicar súper poder por 6 segundos
+              p.hasSuperJump = true;
+              p.body.render.fillStyle = '#fbbf24'; // Cambia a color Dorado Brillante
+
+              if (p.powerTimeout) clearTimeout(p.powerTimeout);
+              
+              p.powerTimeout = setTimeout(() => {
+                if (playersBodies[id]) {
+                  playersBodies[id].hasSuperJump = false;
+                  playersBodies[id].body.render.fillStyle = playersBodies[id].originalColor;
+                }
+              }, 6000);
+
+              // Eliminar la poción del mapa
+              Composite.remove(engine.world, potionBody);
+              potionBody = null;
+              break;
+            }
+          }
+        }
+
+        // 3. Colisión con la Llave
         const isKeyA = bodyA === keyBody;
         const isKeyB = bodyB === keyBody;
         if ((isKeyA || isKeyB) && !hasKey) {
-          // Verificar que el que tocó la llave NO sea una pared o plataforma
           const otherBody = isKeyA ? bodyB : bodyA;
           if (!otherBody.isStatic) {
             hasKey = true;
@@ -207,7 +262,7 @@
           }
         }
 
-        // Tocar Puerta con la llave
+        // 4. Colisión con la Puerta
         const isDoorA = bodyA === doorBody;
         const isDoorB = bodyB === doorBody;
         if ((isDoorA || isDoorB) && hasKey) {
@@ -231,35 +286,49 @@
       });
 
       if (countNearDoor >= playerKeys.length && playerKeys.length > 0) {
-        alert(`🎉 ¡NIVEL COMPLETADO!`);
-        loadLevel(1);
+        if (level === 1) {
+          alert(`🎉 ¡NIVEL 1 COMPLETADO! Pasando al Nivel 2...`);
+          loadLevel(2);
+        } else {
+          alert(`🎉 ¡FELICITACIONES! Completaron el Nivel 2 y ganaron el juego.`);
+          loadLevel(1);
+        }
       }
     }
 
+    // Sincronización de Jugadores
     socket.on('players_updated', (serverPlayers) => {
       document.getElementById('lblPlayerCount').innerText = Object.keys(serverPlayers).length;
 
-      for (let id in serverPlayers) {
-        if (!playersBodies[id]) {
-          const sp = serverPlayers[id];
-          const playerBody = Bodies.rectangle(80 + (sp.playerIndex * 35), 400, 30, 40, {
-            inertia: Infinity,
-            friction: 0.1,
-            render: { fillStyle: sp.color }
-          });
-          Composite.add(engine.world, playerBody);
-          playersBodies[id] = { body: playerBody, color: sp.color };
-        }
-      }
-
       for (let id in playersBodies) {
         if (!serverPlayers[id]) {
+          if (playersBodies[id].powerTimeout) clearTimeout(playersBodies[id].powerTimeout);
           Composite.remove(engine.world, playersBodies[id].body);
           delete playersBodies[id];
         }
       }
+
+      for (let id in serverPlayers) {
+        if (!playersBodies[id]) {
+          const sp = serverPlayers[id];
+          const playerBody = Bodies.rectangle(60 + (sp.playerIndex * 35), 400, 28, 38, {
+            inertia: Infinity,
+            friction: 0.05,
+            render: { fillStyle: sp.color }
+          });
+          Composite.add(engine.world, playerBody);
+          playersBodies[id] = { 
+            body: playerBody, 
+            originalColor: sp.color,
+            hasSuperJump: false,
+            powerTimeout: null,
+            inputs: { left: false, right: false, jump: false } 
+          };
+        }
+      }
     });
 
+    // Eventos de entrada
     socket.on('host_process_input', (data) => {
       if (data.action === 'pause') {
         isPaused = !isPaused;
@@ -275,10 +344,16 @@
       const p = playersBodies[data.socketId];
       if (!p) return;
 
-      if (data.action === 'left') Body.setVelocity(p.body, { x: -4, y: p.body.velocity.y });
-      if (data.action === 'right') Body.setVelocity(p.body, { x: 4, y: p.body.velocity.y });
-      if (data.action === 'jump' && Math.abs(p.body.velocity.y) < 0.3) {
-        Body.setVelocity(p.body, { x: p.body.velocity.x, y: -11 });
+      const isKeyDown = (data.eventType === 'keydown');
+
+      if (data.action === 'left') {
+        p.inputs.left = isKeyDown;
+      } else if (data.action === 'right') {
+        p.inputs.right = isKeyDown;
+      } else if (data.action === 'jump') {
+        if (isKeyDown) {
+          p.inputs.jump = true;
+        }
       }
     });
 
