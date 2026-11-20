@@ -1,0 +1,7 @@
+services:
+  picopark:
+    build: .
+    container_name: picopark-nain
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
