@@ -43,3 +43,15 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/picopark-game:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/picopark-game:sha-${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    steps:
+      - name: Desplegar en la VM
+        run: |
+          cd ~/Proyecto/picopark-game
+          docker compose pull
+          docker compose up -d
+          docker compose ps

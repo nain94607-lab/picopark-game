@@ -1,6 +1,6 @@
 services:
   picopark:
-    build: .
+    image: nain94607/picopark-game:latest
     container_name: picopark-nain
     restart: unless-stopped
     ports:
